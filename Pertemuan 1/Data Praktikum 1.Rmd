@@ -1,1 +1,5 @@
+```{r}
+data_ice_cream <- read.csv("C:/maudy/KULIAH/SEMESTER 5/MPDW/Praktikum/MPDW/Pertemuan 1/ice_cream.csv")
+data_ice_cream
+```
 
