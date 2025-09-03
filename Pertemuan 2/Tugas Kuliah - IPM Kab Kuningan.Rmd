@@ -1,12 +1,13 @@
 ---
-title: "Tugas Kuliah - IPM Kab Kuningan"
+title: "Tugas Kuliah IPM"
 author: "Adinda Maudy Maulidya"
 date: "2025-09-02"
 output: html_document
 editor_options: 
   markdown: 
-    wrap:
+    wrap: 72
 ---
+
 # IPM Kabupaten Kuningan
 
 ## Library
