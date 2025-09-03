@@ -1,5 +1,5 @@
 ---
-title: "Tugas Kuliah - IPM Kab Indramayu"
+title: "Tugas Kuliah - IPM Kab Kuningan"
 author: "Adinda Maudy Maulidya"
 date: "2025-09-02"
 output: html_document
