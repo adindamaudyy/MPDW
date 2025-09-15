@@ -1,1 +1,263 @@
+---
+title: "Tugas Praktikum Pertemuan 3 MPDW"
+author: "Adinda Maudy Maulidya"
+date: "2025-09-14"
+output: html_document
+---
+# MPDW - Tugas Praktikum Pertemuan 3
 
+## Library
+
+```{r}
+library(dLagM)
+library(dynlm)
+library(MLmetrics)
+library(lmtest)
+library(car)
+library(ggplot2)
+library(reshape2)
+```
+
+## Input Data 
+
+```{r}
+library(rio)
+data <- import("Pertemuan 3/NewDelhi_Air_quality.csv")
+data_sub <- subset(data_all, select = -c(V1, datetime, timestamp_local, timestamp_utc, ts))
+str(data_sub)
+```
+
+
+## Peubah
+
+Peubah Y adalah *AQI* dan akan dipilih 1 peubah X yang paling cocok dengan eksplorasi.
+
+```{r}
+# menghitung korelasi antar kolom numerik
+cor_data <- cor(data_sub, use = "complete.obs")
+View(cor_data)
+
+
+# 5. Plot korelasi AQI dengan setiap kandidat X (ggplot)
+data_long <- melt(data_sub, id.vars = "AQI")
+ggplot(data_long, aes(x = value, y = AQI)) +
+  geom_point(alpha = 0.5) +
+  geom_smooth(method = "lm", se = FALSE, color = "red") +
+  facet_wrap(~variable, scales = "free_x") +
+  theme_minimal()
+```
+
+Berdasarkan hasil perhitungan korelasi dan visualisasinya, hubungan antara **AQI** dan **O3** menunjukkan arah positif dengan nilai korelasi *0.97359901*. Artinya, **peningkatan konsentrasi O3 cenderung diikuti oleh kenaikan nilai AQI** yang mencerminkan penurunan kualitas udara. Dibandingkan variabel lain, O3 dipilih sebagai kandidat utama karena memiliki **hubungan positif yang konsisten** dengan AQI serta relevan secara teoritis sebagai salah satu polutan yang signifikan memengaruhi indeks kualitas udara.
+
+
+## Pengecekan Asumsi
+
+```{r}
+model_awal <- lm(AQI ~ o3, data = data)
+summary(model_awal)
+```
+
+```{r}
+dwtest(model_awal)
+```
+
+Berdasarkan hasil uji Durbin-Watson, p-value < 0.05. Hal ini menandakan adanya autokorelasi positif yang kuat pada residual.
+
+
+## Pembagian Data
+
+**PLOT DATA**
+
+```{r}
+data_all$datetime <- as.POSIXct(
+  data_all$datetime,
+  format = "%Y-%m-%d:%H",
+  tz = "UTC"
+)
+
+ggplot(data_all, aes(x = datetime, y = AQI)) +
+  geom_line(color = "blue") +
+  geom_point(color = "red", size = 1) +
+  labs(title = "Plot AQI terhadap Waktu",
+       x = "Datetime",
+       y = "AQI") +
+  theme_minimal()
+```
+Berdasarkan hasil plot, data dibagi menjadi **80% untuk training** dan **20% untuk testing**. Alasan pembagian ini adalah karena pada bagian awal hingga pertengahan (sekitar 58 observasi) pola pergerakan AQI tampak relatif stabil dan konsisten, sedangkan pada bagian akhir (sekitar 14 observasi) cenderung lebih berfluktuasi. Dengan demikian, data training dapat memberikan informasi historis yang cukup bagi model dalam mempelajari pola pergerakan, sementara data testing tetap merepresentasikan kondisi terbaru untuk mengukur performa peramalan. Pembagian ini diharapkan membuat model lebih seimbang, mampu menangkap pola historis sekaligus teruji pada data yang lebih dinamis.
+
+#### Split Data
+```{r}
+train<-data[1:58,]
+test<-data[59:72,]
+```
+
+#### Data Time Series
+
+```{r}
+#data time series
+train.ts<-ts(train)
+test.ts<-ts(test)
+data.ts<-ts(data)
+```
+
+
+## Model Koyck
+
+#### Pemodelan
+
+```{r}
+model.koyck <- koyckDlm(x = train$o3, y = train$AQI)
+summary(model.koyck)
+AIC(model.koyck)
+BIC(model.koyck)
+```
+
+**Interpretasi Hasil:**
+
+-   Dari `summary`, kita dapatkan model:
+
+    $$ \hat{Y_t}=0.26260+0.25823X_t+0.42943Y_{t-1} $$
+
+    Koefisien $X_t$ (0.25823) signifikan, artinya nilai \$X\$ saat ini berpengaruh terhadap $Y$.
+
+-   Koefisien $Y_{t−1}$ (0.42943) juga signifikan. Ini adalah **estimasi untuk** $\lambda$. Nilai ini menunjukkan bahwa sekitar 43% dari efek di periode sebelumnya masih "terbawa" ke periode saat ini.
+
+#### Peramalan dan Akurasi
+
+```{r}
+
+fore.koyck <- forecast(model = model.koyck, x=test$o3, h=14) 
+fore.koyck
+
+# data test
+mape.koyck <- MAPE(fore.koyck$forecasts, test$AQI)
+mape.koyck
+
+#akurasi data training
+GoF(model.koyck)
+```
+Berdasarkan hasil, model Koyck menunjukkan performa yang cukup akurat. Pada data training, diperoleh nilai MAPE sebesar 0,0149 atau sekitar 1,49%, sedangkan pada data testing nilainya sebesar 0,0291 atau sekitar 2,91%. Karena kedua nilai MAPE berada di bawah 10%, hal ini menandakan bahwa tingkat kesalahan peramalan model tergolong sangat rendah.
+
+
+## Regression with Distributed Lag
+
+#### Penentuan *Lag* Optimum
+
+```{r}
+finiteDLMauto(formula = AQI ~ o3,
+              data = data.frame(train), q.min = 1, q.max = 10,
+              model.type = "dlm", error.type = "AIC", trace = TRUE)
+```
+
+Berdasarkan output tersebut, lag optimum didapatkan ketika lag=10. Selanjutnya dilakukan pemodelan untuk lag=6
+
+#### Pemodelan
+
+```{r}
+# model dlm dengan lag optimum
+model.dlm2 <- dlm(x = train$o3,y = train$AQI , q = 10)
+summary(model.dlm2)
+AIC(model.dlm2)
+BIC(model.dlm2)
+```
+
+Dari hasil tersebut terdapat beberapa peubah yang berpengaruh signifikan terhadap taraf nyata 5% yaitu $x_t$ , $x_{t-7}$ , $x_{t-8}$ , $x_{t-9}$. Adapun keseluruhan model yang terbentuk adalah
+
+$$
+\hat{Y_t}=-0.64267+0.42814X_t+...-0.09537X_{t-10}
+$$
+
+#### Peramalan dan Akurasi
+
+```{r}
+#peramalan dan akurasi
+fore.dlm2 <- forecast(model = model.dlm2, x=test$o3, h=14)
+
+#akurasi data test
+mape.dlm2<- MAPE(fore.dlm2$forecasts, test$AQI)
+mape.dlm2
+
+#akurasi data training
+GoF(model.dlm2)
+```
+
+Model tersebut merupakan model yang sangat baik dengan nilai MAPE yang kurang dari 10% 
+
+
+## Model Autoregressive
+
+#### Penentuan *Lag* Optimum
+
+```{r}
+model.ardl.opt <- ardlBoundOrders(data = data.frame(data), ic = "AIC", 
+                                  formula = AQI ~ o3 )
+model.ardl.opt
+min_p=c()
+for(i in 1:14){
+  min_p[i]=min(model.ardl.opt$Stat.table[[i]])
+}
+q_opt=which(min_p==min(min_p, na.rm = TRUE))
+p_opt=which(model.ardl.opt$Stat.table[[q_opt]] == 
+              min(model.ardl.opt$Stat.table[[q_opt]], na.rm = TRUE))
+data.frame("q_optimum" = q_opt, "p_optimum" = p_opt, 
+           "AIC"=model.ardl.opt$min.Stat)
+```
+
+Dari tabel di atas, dapat terlihat bahwa nilai AIC terendah didapat ketika $p=13$ dan $q=2$, yaitu sebesar `16.55044`. Artinya, model autoregressive optimum didapat ketika $p=13$ dan $q=2$.
+
+```{r}
+model.ardl <- ardlDlm(formula = AQI ~ o3, 
+                         data = train,p = 13, q = 2)
+summary(model.ardl2)
+AIC(model.ardl2)
+```
+
+Hasil di atas menunjukkan bahwa selain peubah $x_{t}$, hasil uji t menunjukkan nilai-p pada peubah $\ge0.05$ Hal ini menunjukkan bahwa peubah $x_{t}$ berpengaruh signifikan terhadap $y_t$. Model keseluruhannya adalah sebagai berikut:
+
+$$
+\hat{Y_t}=-1.04456+0.407X_t+0.208X_{t-1}+...+0.14225Y_{t-2}
+$$
+
+#### Peramalan dan Akurasi
+
+```{r}
+fore.ardl <- forecast(model = model.ardl, x=test$o3, h=14)
+fore.ardl
+
+# data testing
+mape.ardl <- MAPE(fore.ardl$forecasts, test$AQI)
+mape.ardl
+# data training
+GoF(model.ardl)
+
+```
+
+Berdasarkan akurasi di atas, terlihat bahwa nilai MAPE keduanya tidak jauh berbeda. Artinya, model regresi dengan distribusi lag ini tidak`overfitted` atau `underfitted`.
+
+
+## Perbandingan Model
+
+```{r}
+akurasi <- matrix(c(mape.koyck, mape.dlm2, mape.ardl))
+row.names(akurasi)<- c("Koyck","DLM ","Autoregressive")
+colnames(akurasi) <- c("MAPE")
+akurasi
+```
+
+Berdasarkan nilai MAPE, model paling optimum didapat pada Model Distributed Lag karena memiliki nilai MAPE yang terkecil.
+
+### Plot
+
+```{r}
+par(mfrow=c(1,1))
+plot(test$o3, test$AQI, type="b", col="black", ylim=c(10,28))
+points(test$o3, fore.koyck$forecasts,col="red")
+lines(test$o3, fore.koyck$forecasts,col="red")
+points(test$o3, fore.dlm2$forecasts,col="orange")
+lines(test$o3, fore.dlm2$forecasts,col="orange")
+points(test$o3, fore.ardl$forecasts,col="green")
+lines(test$o3, fore.ardl$forecasts,col="green")
+legend("topleft",c("aktual", "koyck","DLM", "autoregressive"), lty=1, col=c("black","red","orange","green"), cex=0.8)
+```
+
+Berdasarkan plot tersebut, terlihat bahwa plot yang paling mendekati data aktualnya adalah Model Distributed Lag, sehingga dapat disimpulkan model terbaik dalam hal ini adalah model regresi Distributed Lag.
