@@ -1,1 +1,281 @@
+---
+title: "Tugas Praktikum MPDW - Pertemuan 5"
+author: "Adinda Maudy Maulidya"
+date: "2025-10-02"
+output: rmdformats::readthedown
+---
 
+# LIBRARY
+
+```{r}
+library(ggplot2)
+library(tsibble)
+library(tseries)
+library(MASS)
+```
+
+# INPUT DATA
+
+```{r}
+library(rio)
+data_all <- import("https://raw.githubusercontent.com/gryoirsyad/mpdw/refs/heads/main/ice_cream.csv")
+data_ice <- data_all[116:230,]
+
+# mengubah data menjadi data deret waktu
+data_ice.ts <- ts(data_ice$IPN31152N)
+data_ice.ts
+
+stas <- data_ice.ts
+```
+
+## Plot *Time Series*
+
+```{r}
+plot_stas <- stas |> as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) + geom_line() + theme_bw() +
+  xlab("Obs") + ylab("Nilai")
+plot_stas
+mean(stas)
+```
+
+```{r}
+lattice::densityplot(as.vector(stas))
+```
+
+Plot deret waktu di atas menunjukkan bahwa data cenderung stasioner dalam rataan, ditandai dengan data yang menyebar di sekitar nilai tengahnya (100) dan stasioner dalam ragam, ditandai dengan data berfluktuasi pada rentang yang relatif sama sepanjang waktu.
+
+## Plot ACF
+
+```{r}
+acf(stas)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut
+cenderung *tails off* dan membentuk gelombang sinus.
+
+## Uji ADF
+
+Uji ADF (Augmented Dickey–Fuller) adalah uji statistik yang digunakan
+untuk memeriksa apakah suatu deret waktu stasioner dalam rataan.
+
+```{r}
+tseries::adf.test(stas)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.01 yang lebih
+kecil dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa data
+**stasioner dalam rataan**. Hal ini sesuai dengan hasil eksplorasi
+menggunakan plot time series dan plot ACF.
+
+## Plot Box-Cox
+
+```{r}
+index <- 1:length(stas)
+
+# Box-Cox
+bc <- boxcox(
+  stas ~ index,
+  lambda = seq(-1, 4, by = 0.01)
+)
+
+# Nilai lambda optimum
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang kepercayaan 95% untuk lambda
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, 1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, Batas_Atas = ci_upper)
+
+```
+
+Gambar di atas menunjukkan nilai λ optimum (rounded value) sebesar
+**0,26** dan selang kepercayaan 95% nilai memiliki batas bawah **-0,56**
+dan batas atas **1,08**. Selang tersebut memuat nilai satu sehingga
+dapat dikatakan bahwa data tersebut **stasioner dalam ragam**.
+
+# Partisi Data Deret Waktu
+
+```{r}
+library(ggplot2)
+library(tsibble)
+
+plot_stas <- stas |> 
+  as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() +
+  theme_bw() +
+  xlab("Obs") + 
+  ylab("Nilai") +
+  
+  # Tambahkan garis batas
+  geom_vline(xintercept = 57, linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 115, linetype = "dashed", color = "blue") +
+  ggtitle("Partisi Deret Waktu:")
+
+plot_stas
+
+
+```
+
+## Bagian 1 : observasi 1 - 57
+
+```{r}
+dt_stas1 <- stas[1:57] |> ts()
+
+#rata-rata
+mean(dt_stas1)
+
+#varians
+var(dt_stas1)
+```
+
+#### Plot Time Series
+
+```{r}
+dt_stas1 |> as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() + theme_bw() +
+  xlab("Obs") + ylab("Nilai")
+```
+
+Plot deret waktu di atas menunjukkan bahwa data stasioner dalam rataan,
+ditandai dengan data yang menyebar di sekitar nilai tengahnya (90).
+
+#### Plot ACF
+
+```{r}
+acf(dt_stas1)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut
+cenderung *tails off* dan membentuk gelombang sinus.
+
+#### Uji ADF
+
+```{r}
+tseries::adf.test(dt_stas1)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.01 yang lebih
+kecil dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa data
+**stasioner dalam rataan**. Hal ini sesuai dengan hasil eksplorasi
+menggunakan plot time series dan plot ACF.
+
+#### Plot Boxcox
+
+```{r}
+index <- seq(1, 57)
+
+# Box-Cox
+bc <- boxcox(
+  dt_stas1 ~ index,
+  lambda = seq(-2, 6, by = 0.01)
+)
+
+# Nilai lambda optimum (dibulatkan)
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang kepercayaan 95% untuk lambda
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, 1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, Batas_Atas = ci_upper)
+
+```
+
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum
+sebesar **0,18** dan pada selang kepercayaan 95% nilai memiliki batas
+bawah **-1,16** dan batas atas **1,50**. Selang tersebut memuat nilai
+satu sehingga dapat dikatakan bahwa data tersebut stasioner dalam
+ragam.
+
+## Bagian 2 : observasi 1 - 115
+
+```{r}
+dt_stas2 <- stas[1:115] |> ts()
+mean(dt_stas2)
+var(dt_stas2)
+```
+
+#### Plot Time Series
+
+```{r}
+dt_stas2 |> as_tsibble() |> 
+  ggplot(aes(x = index, y = value)) +
+  geom_line() + theme_bw() +
+  xlab("Obs") + ylab("Nilai")
+```
+
+Plot deret waktu di atas menunjukkan bahwa data stasioner dalam rataan,
+ditandai dengan data yang menyebar di sekitar nilai tengahnya (100).
+
+#### Plot ACF
+
+```{r}
+acf(dt_stas2)
+```
+
+Berdasarkan plot ACF, terlihat bahwa plot ACF pada data tersebut cenderung *tails off* dan membentuk gelombang sinus.
+
+#### Uji ADF
+
+```{r}
+adf.test(dt_stas2)
+```
+
+$H_0$ : Data tidak stasioner dalam rataan
+
+$H_1$ : Data stasioner dalam rataan
+
+Berdasarkan uji ADF tersebut, didapat *p-value* sebesar 0.01 yang lebih
+kecil dari taraf nyata 5% sehingga tolak $H_0$ dan menandakan bahwa
+**data stasioner dalam rataan**. Hal ini sesuai dengan hasil eksplorasi
+menggunakan plot time series dan plot ACF.
+
+#### Plot Boxcox
+
+```{r}
+index <- seq(1, 115)
+
+# Box-Cox
+bc <- boxcox(
+  dt_stas2 ~ index,
+  lambda = seq(0, 6, by = 0.01)
+)
+
+# Nilai lambda optimum
+lambda <- bc$x[which.max(bc$y)]
+lambda
+
+# Selang kepercayaan 95% untuk lambda
+ci_lambda <- bc$x[bc$y > max(bc$y) - 0.5 * qchisq(0.95, 1)]
+
+# Batas bawah dan batas atas
+ci_lower <- min(ci_lambda)
+ci_upper <- max(ci_lambda)
+
+c(Batas_Bawah = ci_lower, Batas_Atas = ci_upper)
+```
+
+Gambar di atas menunjukkan nilai *rounded value* ($\lambda$) optimum
+sebesar **0,26** dan pada selang kepercayaan 95% nilai memiliki batas
+bawah **0,00** dan batas atas **1,08**. Selang tersebut memuat nilai
+satu sehingga dapat dikatakan bahwa data tersebut **stasioner dalam
+ragam**.
